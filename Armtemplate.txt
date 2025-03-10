@@ -1,0 +1,85 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "automationAccountName": {
+      "type": "string",
+      "defaultValue": "20250310test",
+      "metadata": {
+        "description": "Automation account name"
+      }
+    },
+    "samplePowerShellRunbookName": {
+      "type": "String",
+      "defaultValue": "AzureAutomationTutorialScript"
+    },
+    "scheduleStartTime": {
+      "type": "string",
+      "defaultValue": "[format('{0:yyyy-MM-ddTHH:mm:ssZ}', dateTimeAdd(utcNow(), 'PT15M'))]",
+      "metadata": {
+        "description": "Start time for the schedule (UTC) - must be at least 5 minutes after deployment time."
+      }
+    },
+    "scheduleName": {
+      "type": "string",
+      "defaultValue": "DailyRunbookSchedule",
+      "metadata": {
+        "description": "Schedule name for the runbook execution"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Automation/automationAccounts/runbooks",
+      "apiVersion": "2020-01-13-preview",
+      "name": "[concat(parameters('automationAccountName'), '/', parameters('samplePowerShellRunbookName'))]",
+      "location": "eastus",
+      "dependsOn": [
+        "[parameters('automationAccountName')]"
+      ],
+      "properties": {
+        "runbookType": "PowerShell",
+        "logProgress": "true",
+        "logVerbose": "false",
+        "description": "Sample PowerShell Runbook",
+        "state": "Published",
+        "content": "Write-Output 'Hello, Azure Automation!'"
+      }
+    },
+    {
+      "type": "Microsoft.Automation/automationAccounts/schedules",
+      "apiVersion": "2020-01-13-preview",
+      "name": "[concat(parameters('automationAccountName'), '/', parameters('scheduleName'))]",
+      "location": "eastus",
+      "dependsOn": [
+        "[parameters('automationAccountName')]"
+      ],
+      "properties": {
+        "description": "Runs every other day",
+        "startTime": "[parameters('scheduleStartTime')]",
+        "interval": 2,
+        "frequency": "Day",
+        "timeZone": "UTC"
+      }
+    },
+    {
+      "type": "Microsoft.Automation/automationAccounts/jobSchedules",
+      "apiVersion": "2020-01-13-preview",
+      "name": "[concat(parameters('automationAccountName'), '/DailyRunbookScheduleJob')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]",
+        "[resourceId('Microsoft.Automation/automationAccounts/schedules', parameters('automationAccountName'), parameters('scheduleName'))]",
+        "[resourceId('Microsoft.Automation/automationAccounts/runbooks', parameters('automationAccountName'), parameters('samplePowerShellRunbookName'))]"
+      ],
+      "properties": {
+        "schedule": {
+          "name": "[parameters('scheduleName')]"
+        },
+        "runbook": {
+          "name": "[parameters('samplePowerShellRunbookName')]"
+        },
+        "parameters": {}
+      }
+    }
+  ]
+}
