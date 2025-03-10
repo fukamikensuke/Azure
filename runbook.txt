@@ -1,0 +1,92 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "resources": [
+    {
+      "type": "Microsoft.Automation/automationAccounts",
+      "apiVersion": "2021-06-22",
+      "name": "[parameters('automationAccountName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {}
+    }
+  ],
+  "parameters": {
+    "automationAccountName": {
+      "type": "string"
+    }
+  }
+}
+
+
+
+
+az deployment group create \
+  --resource-group <ResourceGroupName> \
+  --template-file template.json \
+  --parameters automationAccountName="<AutomationAccountName>"
+
+
+
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  azureSubscription: '<Azure DevOps Service Connection Name>'
+  resourceGroupName: '<ResourceGroupName>'
+  automationAccountName: '<AutomationAccountName>'
+  runbookName: 'MyRunbook'
+  scriptPath: 'MyRunbook.ps1'
+
+steps:
+- task: AzureCLI@2
+  displayName: 'ログイン & Automation Runbook 作成'
+  inputs:
+    azureSubscription: $(azureSubscription)
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      # Runbook が存在するか確認
+      RUNBOOK_EXISTS=$(az automation runbook list \
+        --automation-account-name $(automationAccountName) \
+        --resource-group $(resourceGroupName) \
+        --query "[?name=='$(runbookName)'] | length(@)")
+
+      # Runbook が存在しない場合、新規作成
+      if [ "$RUNBOOK_EXISTS" -eq "0" ]; then
+        echo "Runbook $(runbookName) を作成します..."
+        az automation runbook create \
+          --automation-account-name $(automationAccountName) \
+          --name $(runbookName) \
+          --resource-group $(resourceGroupName) \
+          --type PowerShell \
+          --description "Runbook created from Azure DevOps"
+      else
+        echo "Runbook $(runbookName) は既に存在します。"
+      fi
+
+      # Runbook のスクリプトを更新
+      echo "Runbook $(runbookName) のスクリプトをアップロードします..."
+      az automation runbook replace-content \
+        --automation-account-name $(automationAccountName) \
+        --name $(runbookName) \
+        --resource-group $(resourceGroupName) \
+        --content "$(cat $(Build.SourcesDirectory)/$(scriptPath))"
+
+
+az automation runbook publish \
+  --automation-account-name <AutomationAccountName> \
+  --name "MyRunbook" \
+  --resource-group <ResourceGroupName>
+
+
+
+az automation runbook start \
+  --automation-account-name <AutomationAccountName> \
+  --name "MyRunbook" \
+  --resource-group <ResourceGroupName> \
+  --parameters message="Hello from Azure DevOps"
+
+
