@@ -9,96 +9,9 @@ variables:
   resourceGroupName: '<ResourceGroupName>'
   location: 'japaneast'
   automationAccountName: '<AutomationAccountName>'
-
-steps:
-- task: AzureResourceManagerTemplateDeployment@3
-  displayName: 'ARM テンプレートをデプロイ'
-  inputs:
-    deploymentScope: 'Resource Group'
-    azureResourceManagerConnection: $(azureSubscription)
-    subscriptionId: '<Your Azure Subscription ID>'
-    action: 'Create Or Update Resource Group'
-    resourceGroupName: $(resourceGroupName)
-    location: $(location)
-    templateLocation: 'Linked artifact'
-    csmFile: 'template.json'
-    overrideParameters: >
-      -automationAccountName $(automationAccountName)
-
-
-- task: AzureCLI@2
-  displayName: 'Runbook を作成 & スクリプトを適用'
-  inputs:
-    azureSubscription: $(azureSubscription)
-    scriptType: 'bash'
-    scriptLocation: 'inlineScript'
-    inlineScript: |
-      # Runbook が存在するかチェック
-      RUNBOOK_EXISTS=$(az automation runbook list \
-        --automation-account-name $(automationAccountName) \
-        --resource-group $(resourceGroupName) \
-        --query "[?name=='MyRunbook'] | length(@)")
-
-      # Runbook がなければ作成
-      if [ "$RUNBOOK_EXISTS" -eq "0" ]; then
-        echo "Runbook を新規作成"
-        az automation runbook create \
-          --automation-account-name $(automationAccountName) \
-          --name "MyRunbook" \
-          --resource-group $(resourceGroupName) \
-          --type PowerShell \
-          --description "Azure DevOps からデプロイ"
-      else
-        echo "Runbook は既に存在"
-      fi
-
-      # DevOps のリポジトリ内の PowerShell スクリプトを取得して適用
-      echo "スクリプトを Runbook に適用"
-      az automation runbook replace-content \
-        --automation-account-name $(automationAccountName) \
-        --name "MyRunbook" \
-        --resource-group $(resourceGroupName) \
-        --content "$(cat $(Build.SourcesDirectory)/MyRunbook.ps1)"
-
-- task: AzureCLI@2
-  displayName: 'Runbook を発行'
-  inputs:
-    azureSubscription: $(azureSubscription)
-    scriptType: 'bash'
-    scriptLocation: 'inlineScript'
-    inlineScript: |
-      az automation runbook publish \
-        --automation-account-name $(automationAccountName) \
-        --name "MyRunbook" \
-        --resource-group $(resourceGroupName)
-
-
-- task: AzureCLI@2
-  displayName: 'Runbook を実行'
-  inputs:
-    azureSubscription: $(azureSubscription)
-    scriptType: 'bash'
-    scriptLocation: 'inlineScript'
-    inlineScript: |
-      az automation runbook start \
-        --automation-account-name $(automationAccountName) \
-        --name "MyRunbook" \
-        --resource-group $(resourceGroupName) \
-        --parameters message="Hello from Azure DevOps"
-
-trigger:
-- main  # mainブランチに push したら実行
-
-pool:
-  vmImage: 'ubuntu-latest'  # Microsoft-hosted Agentを使用
-
-variables:
-  azureSubscription: '<Azure DevOps Service Connection Name>'
-  resourceGroupName: '<ResourceGroupName>'
-  location: 'japaneast'
-  automationAccountName: '<AutomationAccountName>'
   runbookName: 'MyRunbook'
   scriptPath: 'MyRunbook.ps1'
+  scheduleName: 'MyRunbookSchedule'
 
 steps:
 - task: AzureResourceManagerTemplateDeployment@3
@@ -159,14 +72,48 @@ steps:
         --resource-group $(resourceGroupName)
 
 - task: AzureCLI@2
-  displayName: 'Runbook を実行'
+  displayName: 'Runbook にスケジュールを設定'
   inputs:
     azureSubscription: $(azureSubscription)
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
     inlineScript: |
-      az automation runbook start \
+      # デプロイ翌日の日付を取得
+      START_TIME=$(date -u -d "tomorrow 11:00" +%Y-%m-%dT11:00:00Z)
+
+      # スケジュールが存在するか確認
+      SCHEDULE_EXISTS=$(az automation schedule list \
         --automation-account-name $(automationAccountName) \
-        --name $(runbookName) \
         --resource-group $(resourceGroupName) \
-        --parameters message="Hello from Azure DevOps"
+        --query "[?name=='$(scheduleName)'] | length(@)")
+
+      if [ "$SCHEDULE_EXISTS" -eq "0" ]; then
+        echo "スケジュールを作成: $(scheduleName)"
+        az automation schedule create \
+          --automation-account-name $(automationAccountName) \
+          --resource-group $(resourceGroupName) \
+          --name $(scheduleName) \
+          --description "毎日おきに 20:00 JST に実行" \
+          --start-time $START_TIME \
+          --frequency Day \
+          --interval 2 \
+          --time-zone "Tokyo Standard Time"
+      else
+        echo "スケジュール $(scheduleName) は既に存在"
+      fi
+
+      echo "スケジュール $(scheduleName) を Runbook にリンク"
+      az automation webhook create \
+        --automation-account-name $(automationAccountName) \
+        --resource-group $(resourceGroupName) \
+        --name $(scheduleName)-webhook \
+        --is-enabled true \
+        --runbook-name $(runbookName) \
+        --uri "" \
+        --expiry "2099-12-31T23:59:59Z"
+
+      az automation schedule link \
+        --automation-account-name $(automationAccountName) \
+        --resource-group $(resourceGroupName) \
+        --schedule-name $(scheduleName) \
+        --runbook-name $(runbookName)
