@@ -4,7 +4,6 @@
   "parameters": {
     "automationAccountName": {
       "type": "string",
-      "defaultValue": "20250310test",
       "metadata": {
         "description": "Automation account name"
       }
@@ -30,10 +29,24 @@
   },
   "resources": [
     {
+      "type": "Microsoft.Automation/automationAccounts",
+      "apiVersion": "2020-01-13-preview",
+      "name": "[parameters('automationAccountName')]",
+      "location": "japanwest",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "sku": {
+          "name": "Basic"
+        }
+      }
+    },
+    {
       "type": "Microsoft.Automation/automationAccounts/runbooks",
       "apiVersion": "2020-01-13-preview",
       "name": "[concat(parameters('automationAccountName'), '/', parameters('samplePowerShellRunbookName'))]",
-      "location": "eastus",
+      "location": "japanwest",
       "dependsOn": [
         "[parameters('automationAccountName')]"
       ],
@@ -50,7 +63,7 @@
       "type": "Microsoft.Automation/automationAccounts/schedules",
       "apiVersion": "2020-01-13-preview",
       "name": "[concat(parameters('automationAccountName'), '/', parameters('scheduleName'))]",
-      "location": "eastus",
+      "location": "japanwest",
       "dependsOn": [
         "[parameters('automationAccountName')]"
       ],
